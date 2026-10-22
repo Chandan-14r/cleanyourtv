@@ -10,43 +10,44 @@ import android.util.AttributeSet;
 import android.view.View;
 
 /**
- * A translucent glass slab: soft sheen fill, bright top specular, crisp rim and a faint outer glow.
- * One instance floats over the grid and is moved with spring animations between tiles.
+ * Cinematic Floating Glass Highlight:
+ * A translucent floating glass slab with soft sheen fill, subtle top specular sheen,
+ * restrained light sweep / edge highlight, crisp thin sapphire border, and layered ambient glow.
+ * Cached in hardware layer for silky 60fps translation across tiles on Fire TV hardware.
  */
 public class GlassView extends View {
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint specular = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint specularSweep = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint rim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
     private final float density;
     private float radius;
-    /** Glow colour as 0xRRGGBB: white normally, a festival's accent (diya gold) while a festive skin is on. */
+    /** Glow colour: Sapphire cyan (0x38BDF8), or festival's accent while active. */
     private int glowRgb = 0x38BDF8;
-    /** Glow strength: the white glow stays faint, a coloured one needs more alpha to read as warm light. */
-    private int glowAlpha = 0x48;
+    private int glowAlpha = 0x58;
 
     public GlassView(Context context, AttributeSet attrs) {
         super(context, attrs);
         density = getResources().getDisplayMetrics().density;
         radius = 16f * density;
         rim.setStyle(Paint.Style.STROKE);
-        rim.setStrokeWidth(2f * density);
-        rim.setColor(0xCCE0F2FE);
+        rim.setStrokeWidth(1.6f * density);
+        rim.setColor(0xEE38BDF8);
         glow.setStyle(Paint.Style.STROKE);
         // Cache the slab as a texture. The spring only changes translation, so the GPU can
-        // move it without replaying clipPath and the glow on every frame. That path is
-        // software-rendered on the MT5895 and is what makes the highlight crawl.
+        // move it without replaying clipPath and the glow on every frame.
         setLayerType(LAYER_TYPE_HARDWARE, null);
     }
 
-    /** Tints the rim and the outer glow; 0 restores the plain white glass. */
+    /** Tints the rim and the outer glow; 0 restores the sapphire cyan glass. */
     void setAccent(int argb) {
         if (argb == 0) {
-            glowRgb = 0xFFFFFF;
-            glowAlpha = 0x30;
-            rim.setColor(0xCCE0F2FE);
+            glowRgb = 0x38BDF8;
+            glowAlpha = 0x58;
+            rim.setColor(0xEE38BDF8);
         } else {
             glowRgb = argb & 0xFFFFFF;
             glowAlpha = 0x70;
@@ -66,8 +67,10 @@ public class GlassView extends View {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        fill.setShader(new LinearGradient(0, 0, 0, h, 0x2E1E3A5F, 0x0D0B1A2F, Shader.TileMode.CLAMP));
-        specular.setShader(new LinearGradient(0, 0, 0, h * 0.45f, 0x4D38BDF8, 0x0038BDF8, Shader.TileMode.CLAMP));
+        fill.setShader(new LinearGradient(0, 0, 0, h, 0x2E1E3A5F, 0x0A0B1A2F, Shader.TileMode.CLAMP));
+        specular.setShader(new LinearGradient(0, 0, 0, h * 0.42f, 0x5538BDF8, 0x0038BDF8, Shader.TileMode.CLAMP));
+        // Restrained light sweep / edge highlight across the top-right
+        specularSweep.setShader(new LinearGradient(w * 0.35f, 0, w, 0, 0x0038BDF8, 0x66E0F2FE, Shader.TileMode.CLAMP));
     }
 
     @Override
@@ -75,24 +78,30 @@ public class GlassView extends View {
         float inset = 6f * density;   // room for the glow
         rect.set(inset, inset, getWidth() - inset, getHeight() - inset);
 
-        // Outer glow: three widening, fading strokes. The hardware layer caches the result, so
-        // they cost one draw, not one per frame of the spring.
+        // Outer glow: 3 widening, fading strokes for atmospheric bloom
         for (int i = 1; i <= 3; i++) {
-            glow.setStrokeWidth(i * 2f * density);
+            glow.setStrokeWidth(i * 2.2f * density);
             glow.setColor((glowAlpha / i) << 24 | glowRgb);
             float o = i * density;
             canvas.drawRoundRect(rect.left - o, rect.top - o, rect.right + o, rect.bottom + o, radius + o, radius + o, glow);
         }
 
+        // Translucent glass fill
         canvas.drawRoundRect(rect, radius, radius, fill);
 
-        // Sheen across the top 45%: clipRect stays on the GPU (clipPath did not on the MT5895) and
-        // the round rect under it keeps the top corners rounded with a flat bottom edge.
+        // Specular sheen across the top 42%
         canvas.save();
-        canvas.clipRect(rect.left, rect.top, rect.right, rect.top + rect.height() * 0.45f);
+        canvas.clipRect(rect.left, rect.top, rect.right, rect.top + rect.height() * 0.42f);
         canvas.drawRoundRect(rect, radius, radius, specular);
         canvas.restore();
 
+        // Subtle restrained light sweep along the top edge
+        canvas.save();
+        canvas.clipRect(rect.left + rect.width() * 0.35f, rect.top, rect.right, rect.top + 3f * density);
+        canvas.drawRoundRect(rect, radius, radius, specularSweep);
+        canvas.restore();
+
+        // Thin elegant sapphire rim
         canvas.drawRoundRect(rect, radius, radius, rim);
     }
 }

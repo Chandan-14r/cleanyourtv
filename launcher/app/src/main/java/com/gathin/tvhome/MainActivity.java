@@ -127,10 +127,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private GlassView glass;
     private View ambient;
     private View heroLayout;
+    private ImageView heroIcon;
     private TextView heroName;
     private TextView heroBadge;
     private TextView heroSubtitle;
     private TextView heroAction;
+    private View ambientFieldSapphire;
+    private View ambientFieldCyan;
+    private ValueAnimator livingSapphireAnim;
+    private ValueAnimator livingCyanAnim;
+    private boolean initialEntrancePlayed = false;
     private int ambientColor = -1;
     private ValueAnimator ambientAnimator;
     private boolean heroShown;
@@ -306,11 +312,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
         if (festive) glass.setAccent(festival.accentColor());
+        ambientFieldSapphire = findViewById(R.id.ambientFieldSapphire);
+        ambientFieldCyan = findViewById(R.id.ambientFieldCyan);
+        startAmbientLivingDrift();
+
         ambient = findViewById(R.id.ambient);
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
         // a fade renders it into a full-screen offscreen buffer first.
         ambient.forceHasOverlappingRendering(false);
         heroLayout = findViewById(R.id.heroLayout);
+        heroIcon = findViewById(R.id.heroIcon);
         heroName = findViewById(R.id.heroName);
         heroBadge = findViewById(R.id.heroBadge);
         heroSubtitle = findViewById(R.id.heroSubtitle);
@@ -320,6 +331,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (adapter != null && lastFocused >= 0 && lastFocused < adapter.getItemCount()) {
                     adapter.launchAt(lastFocused);
                 }
+            });
+            heroAction.setOnFocusChangeListener((v, focused) -> {
+                v.animate().cancel();
+                float s = focused ? 1.06f : 1.0f;
+                v.animate().scaleX(s).scaleY(s)
+                        .translationZ(focused ? 8f * density : 0f)
+                        .setDuration(180)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
+                        .start();
+            });
+            heroAction.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+                if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    focusTile(lastFocused % COLUMNS);
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                    View btnSet = findViewById(R.id.btnSettings);
+                    if (btnSet != null) btnSet.requestFocus();
+                    return true;
+                }
+                return false;
             });
         }
         // aurora view removed
@@ -453,8 +486,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 s.setSpring(new SpringForce().setStiffness(1400f).setDampingRatio(0.95f));
                 s.setMinimumVisibleChange(1.5f);
             } else {
-                s.setSpring(new SpringForce().setStiffness(advancedEffects ? 320f : 260f)
-                        .setDampingRatio(advancedEffects ? 0.76f : 0.58f));
+                s.setSpring(new SpringForce().setStiffness(advancedEffects ? 460f : 380f)
+                        .setDampingRatio(0.86f));
             }
         }
 
@@ -517,6 +550,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnWifi.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
         btnReorder.setOnKeyListener(pillKeys);
+
+        View.OnFocusChangeListener topBtnFocus = (v, focused) -> {
+            v.animate().cancel();
+            float s = focused ? 1.06f : 1.0f;
+            v.animate().scaleX(s).scaleY(s)
+                    .translationZ(focused ? 6f * density : 0f)
+                    .setDuration(180)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
+                    .start();
+        };
+        btnInputs.setOnFocusChangeListener(topBtnFocus);
+        btnWifi.setOnFocusChangeListener(topBtnFocus);
+        btnSettings.setOnFocusChangeListener(topBtnFocus);
+        btnReorder.setOnFocusChangeListener(topBtnFocus);
         if (advancedEffects) {
             for (View button : new View[]{btnInputs, btnWifi, btnReorder, btnSettings}) {
                 button.setOnFocusChangeListener((view, focused) -> view.animate()
@@ -616,6 +663,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             reloadApps(false);
         }
         rebuildOnResume = false;
+        startAmbientLivingDrift();
         updateGreeting();
         updateWifiLabel();
         updateRamLabel();
@@ -666,6 +714,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // Keep a focused footer at the end even when the app count changes.
             if (restoreLibrary) grid.post(this::focusLibrary);
             else restoreFocus();
+            playInitialGridEntrance();
         } else {
             // A package change must not steal focus from a top button or the Inputs popup.
             int pos = adapter.positionOf(returnKey);
@@ -729,6 +778,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // aurora inactive
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
+        stopAmbientLivingDrift();
         stopAmbientAnimation();
         heroName.animate().cancel();
         ambient.animate().cancel();
@@ -1897,6 +1947,79 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    private void startAmbientLivingDrift() {
+        if (ambientFieldSapphire == null || ambientFieldCyan == null) return;
+        ambientFieldSapphire.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        ambientFieldCyan.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        if (!animations || reducedMotion) return;
+
+        stopAmbientLivingDrift();
+
+        livingSapphireAnim = ValueAnimator.ofFloat(0f, 1f);
+        livingSapphireAnim.setDuration(16000L);
+        livingSapphireAnim.setRepeatMode(ValueAnimator.REVERSE);
+        livingSapphireAnim.setRepeatCount(ValueAnimator.INFINITE);
+        livingSapphireAnim.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        final float sShiftX = 40f * density, sShiftY = 30f * density;
+        livingSapphireAnim.addUpdateListener(anim -> {
+            float frac = (float) anim.getAnimatedValue();
+            ambientFieldSapphire.setTranslationX((frac * 2f - 1f) * sShiftX);
+            ambientFieldSapphire.setTranslationY((frac * 2f - 1f) * sShiftY);
+            float scale = 1.0f + frac * 0.08f;
+            ambientFieldSapphire.setScaleX(scale);
+            ambientFieldSapphire.setScaleY(scale);
+        });
+        livingSapphireAnim.start();
+
+        livingCyanAnim = ValueAnimator.ofFloat(0f, 1f);
+        livingCyanAnim.setDuration(20000L);
+        livingCyanAnim.setRepeatMode(ValueAnimator.REVERSE);
+        livingCyanAnim.setRepeatCount(ValueAnimator.INFINITE);
+        livingCyanAnim.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        final float cShiftX = 35f * density, cShiftY = 28f * density;
+        livingCyanAnim.addUpdateListener(anim -> {
+            float frac = (float) anim.getAnimatedValue();
+            ambientFieldCyan.setTranslationX((1f - frac * 2f) * cShiftX);
+            ambientFieldCyan.setTranslationY((frac * 2f - 1f) * cShiftY);
+            float scale = 0.94f + frac * 0.10f;
+            ambientFieldCyan.setScaleX(scale);
+            ambientFieldCyan.setScaleY(scale);
+        });
+        livingCyanAnim.start();
+    }
+
+    private void stopAmbientLivingDrift() {
+        if (livingSapphireAnim != null) {
+            livingSapphireAnim.cancel();
+            livingSapphireAnim = null;
+        }
+        if (livingCyanAnim != null) {
+            livingCyanAnim.cancel();
+            livingCyanAnim = null;
+        }
+    }
+
+    private void playInitialGridEntrance() {
+        if (initialEntrancePlayed || !animations || reducedMotion || grid == null) return;
+        initialEntrancePlayed = true;
+        grid.post(() -> {
+            int childCount = Math.min(grid.getChildCount(), COLUMNS);
+            for (int i = 0; i < childCount; i++) {
+                View child = grid.getChildAt(i);
+                if (child != null) {
+                    child.setAlpha(0f);
+                    child.setTranslationY(14f * density);
+                    child.animate().alpha(1f).translationY(0f)
+                            .setDuration(220)
+                            .setStartDelay(i * 35L)
+                            .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
+                            .withLayer()
+                            .start();
+                }
+            }
+        });
+    }
+
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
@@ -1909,13 +2032,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         String pkg = adapter.keyAt(position);
         HeroMetadata.Info info = HeroMetadata.getInfo(pkg, label);
+        AppAdapter.Entry entry = adapter.getItem(position);
 
         if (!animations || reducedMotion) {
             heroName.setText(label);
             if (heroBadge != null) heroBadge.setText(info.badge);
             if (heroSubtitle != null) heroSubtitle.setText(info.subtitle);
+            if (heroIcon != null && entry != null) {
+                Drawable d = entry.icon != null ? entry.icon : entry.banner;
+                heroIcon.setImageDrawable(d);
+            }
+            if (heroAction != null) {
+                heroAction.setText("▶ OPEN " + (label.length() > 12 ? "APP" : label.toUpperCase(Locale.US)));
+                heroAction.setOnClickListener(v -> adapter.launchAt(position));
+            }
             targetHero.setAlpha(1f);
             targetHero.setTranslationX(0f);
+            targetHero.setTranslationY(0f);
             setAmbient(color);
             ambient.setAlpha(1f);
             heroShown = true;
@@ -1926,20 +2059,39 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             heroName.setText(label);
             if (heroBadge != null) heroBadge.setText(info.badge);
             if (heroSubtitle != null) heroSubtitle.setText(info.subtitle);
+            if (heroIcon != null && entry != null) {
+                Drawable d = entry.icon != null ? entry.icon : entry.banner;
+                heroIcon.setImageDrawable(d);
+            }
+            if (heroAction != null) {
+                heroAction.setText("▶ OPEN " + (label.length() > 12 ? "APP" : label.toUpperCase(Locale.US)));
+                heroAction.setOnClickListener(v -> adapter.launchAt(position));
+            }
             targetHero.animate().cancel();
             targetHero.setAlpha(0f);
-            targetHero.animate().alpha(1f).setDuration(220).start();
+            targetHero.setTranslationY(10f * density);
+            targetHero.animate().alpha(1f).translationY(0f).setDuration(240)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f)).start();
             setAmbient(color);
             ambient.animate().alpha(1f).setDuration(400).start();
             heroShown = true;
         } else if (changed) {
             targetHero.animate().cancel();
-            targetHero.animate().alpha(0.2f).translationX(-10 * density).setDuration(100).withEndAction(() -> {
+            targetHero.animate().alpha(0.25f).translationX(-8f * density).setDuration(90).withEndAction(() -> {
                 heroName.setText(label);
                 if (heroBadge != null) heroBadge.setText(info.badge);
                 if (heroSubtitle != null) heroSubtitle.setText(info.subtitle);
-                targetHero.setTranslationX(10 * density);
-                targetHero.animate().alpha(1f).translationX(0f).setDuration(180).start();
+                if (heroIcon != null && entry != null) {
+                    Drawable d = entry.icon != null ? entry.icon : entry.banner;
+                    heroIcon.setImageDrawable(d);
+                }
+                if (heroAction != null) {
+                    heroAction.setText("▶ OPEN " + (label.length() > 12 ? "APP" : label.toUpperCase(Locale.US)));
+                    heroAction.setOnClickListener(v -> adapter.launchAt(position));
+                }
+                targetHero.setTranslationX(8f * density);
+                targetHero.animate().alpha(1f).translationX(0f).setDuration(180)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
             }).start();
             if (advancedEffects) {
                 transitionAmbient(color);
@@ -2265,7 +2417,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Circular Navigation: Up / Down wrap-around
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (position < COLUMNS) {
-                // Dock row (top): allow moving up to header pills (Wi-Fi/Settings)
+                // Dock row (top): if hero action is visible and focusable, move to it!
+                if (heroAction != null && heroAction.getVisibility() == View.VISIBLE && heroAction.isFocusable()) {
+                    heroAction.requestFocus();
+                    return true;
+                }
                 return false;
             }
             target = position - COLUMNS;

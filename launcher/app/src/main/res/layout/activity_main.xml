@@ -5,6 +5,34 @@
     android:layout_height="match_parent"
     android:background="#FF07111F">
 
+    <!-- Living Ambient Background Container: Two slow-moving GPU-accelerated atmospheric light fields -->
+    <FrameLayout
+        android:id="@+id/ambientLivingContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no">
+
+        <View
+            android:id="@+id/ambientFieldSapphire"
+            android:layout_width="1400dp"
+            android:layout_height="900dp"
+            android:layout_gravity="top|start"
+            android:layout_marginStart="-200dp"
+            android:layout_marginTop="-150dp"
+            android:background="@drawable/ambient_field_sapphire"
+            android:alpha="0.75" />
+
+        <View
+            android:id="@+id/ambientFieldCyan"
+            android:layout_width="1200dp"
+            android:layout_height="800dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="-150dp"
+            android:layout_marginBottom="-120dp"
+            android:background="@drawable/ambient_field_cyan"
+            android:alpha="0.55" />
+    </FrameLayout>
+
     <!-- Time-of-day backdrop, drawn once a minute (config.xml sky_intensity; 0 keeps it hidden). -->
     <com.gathin.tvhome.SkyView
         android:id="@+id/sky"
@@ -178,7 +206,7 @@
                     style="@style/TopButton"
                     android:text="@string/inputs"
                     android:drawableStart="@drawable/ic_input"
-                    android:nextFocusDown="@+id/grid" />
+                    android:nextFocusDown="@+id/heroAction" />
 
                 <TextView
                     android:id="@+id/btnWifi"
@@ -188,96 +216,132 @@
                     android:ellipsize="end"
                     android:text="@string/wifi"
                     android:drawableStart="@drawable/ic_wifi"
-                    android:nextFocusDown="@+id/grid" />
+                    android:nextFocusDown="@+id/heroAction" />
 
                 <TextView
                     android:id="@+id/btnReorder"
                     style="@style/TopButtonIcon"
                     android:contentDescription="@string/reorder"
                     android:drawableStart="@drawable/ic_swap_vert"
-                    android:nextFocusDown="@+id/grid" />
+                    android:nextFocusDown="@+id/heroAction" />
 
                 <TextView
                     android:id="@+id/btnSettings"
                     style="@style/TopButton"
                     android:text="@string/settings"
                     android:drawableStart="@drawable/ic_settings"
-                    android:nextFocusDown="@+id/grid" />
+                    android:nextFocusDown="@+id/heroAction" />
             </LinearLayout>
         </RelativeLayout>
 
         <!-- Cinematic Apple TV / Google TV Hero Spotlight -->
-        <LinearLayout
+        <RelativeLayout
             android:id="@+id/heroLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:layout_marginBottom="12dp"
-            android:orientation="vertical"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="8dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:background="@drawable/hero_card_bg"
             android:clipChildren="false"
             android:clipToPadding="false">
 
+            <!-- Hero App Artwork / Icon -->
+            <ImageView
+                android:id="@+id/heroIcon"
+                android:layout_width="54dp"
+                android:layout_height="54dp"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="16dp"
+                android:background="@drawable/hero_icon_bg"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null" />
+
+            <!-- Middle Text Information -->
             <LinearLayout
-                android:id="@+id/heroBadgeLayout"
-                android:layout_width="wrap_content"
+                android:id="@+id/heroTextColumn"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:layout_toEndOf="@id/heroIcon"
+                android:layout_toStartOf="@+id/heroAction"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="16dp"
+                android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/heroBadge"
+                <LinearLayout
+                    android:id="@+id/heroBadgeLayout"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:background="@drawable/badge_sapphire_bg"
-                    android:paddingStart="9dp"
-                    android:paddingEnd="9dp"
-                    android:paddingTop="3dp"
-                    android:paddingBottom="3dp"
-                    android:textColor="#38BDF8"
-                    android:textSize="11sp"
-                    android:fontFamily="@font/outfit_medium"
-                    android:letterSpacing="0.08"
-                    android:text="4K ULTRA HD" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/heroBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/badge_sapphire_bg"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:textColor="#38BDF8"
+                        android:textSize="10sp"
+                        android:fontFamily="@font/outfit_medium"
+                        android:letterSpacing="0.08"
+                        android:text="4K 60FPS · NO ADS" />
+                </LinearLayout>
 
                 <TextView
-                    android:id="@+id/heroAction"
+                    android:id="@+id/heroName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/badge_sapphire_bg"
-                    android:paddingStart="9dp"
-                    android:paddingEnd="9dp"
-                    android:paddingTop="3dp"
-                    android:paddingBottom="3dp"
-                    android:textColor="#CBD5E1"
-                    android:textSize="11sp"
+                    android:layout_marginTop="2dp"
+                    android:textColor="#F8FAFC"
+                    android:textSize="26sp"
                     android:fontFamily="@font/outfit_medium"
-                    android:letterSpacing="0.06"
-                    android:text="▶ PRESS OK TO OPEN" />
+                    android:letterSpacing="-0.01"
+                    android:includeFontPadding="false"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/heroSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp"
+                    android:fontFamily="@font/outfit_regular"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:text="Ad-Free YouTube, SponsorBlock &amp; Music" />
             </LinearLayout>
 
+            <!-- Hero Action Button: Interactive, Focusable, Clickable -->
             <TextView
-                android:id="@+id/heroName"
+                android:id="@+id/heroAction"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
+                android:layout_height="38dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="@drawable/hero_btn_bg"
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp"
+                android:gravity="center"
                 android:textColor="#F8FAFC"
-                android:textSize="36sp"
-                android:fontFamily="@font/outfit_light"
-                android:letterSpacing="-0.02"
-                android:includeFontPadding="false"
-                android:singleLine="true" />
-
-            <TextView
-                android:id="@+id/heroSubtitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:textColor="#CBD5E1"
                 android:textSize="13sp"
-                android:fontFamily="@font/outfit"
-                android:text="Cinema &amp; Series" />
-        </LinearLayout>
+                android:fontFamily="@font/outfit_medium"
+                android:letterSpacing="0.04"
+                android:text="▶ OPEN"
+                android:focusable="true"
+                android:clickable="true"
+                android:nextFocusDown="@+id/grid"
+                android:nextFocusUp="@+id/btnSettings" />
+        </RelativeLayout>
 
         <!-- Main Grid Container: Favourites Dock + Installed Applications -->
         <FrameLayout

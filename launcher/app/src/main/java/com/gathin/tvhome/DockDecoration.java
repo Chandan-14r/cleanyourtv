@@ -1,9 +1,11 @@
 package com.gathin.tvhome;
 
 import android.graphics.Canvas;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -11,7 +13,8 @@ import androidx.recyclerview.widget.RecyclerView;
 
 /**
  * Enhanced tvOS / Google TV style dock decoration:
- * - Draws the translucent sapphire frosted glass band behind the pinned dock row.
+ * - Draws the translucent sapphire frosted floating glass dock behind the pinned dock row.
+ * - Draws subtle surface lighting, fine sapphire border, and soft depth shadow.
  * - Draws clean section header: "✦ ALL APPLICATIONS" above the installed apps grid.
  */
 public class DockDecoration extends RecyclerView.ItemDecoration {
@@ -19,18 +22,27 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     private final int dockSize;
     private final float density;
     private final Paint band = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint shadow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint topHighlight = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint allAppsPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
+    private final RectF shadowRect = new RectF();
 
     DockDecoration(int dockSize, float density) {
         this.dockSize = dockSize;
         this.density = density;
 
-        band.setColor(0xCC09172A); // Translucent Sapphire Midnight Navy Glass
+        band.setColor(0xD4091628); // Translucent Sapphire Midnight Navy Glass
+        shadow.setColor(0x38000000); // Soft ambient drop shadow
+
         edge.setStyle(Paint.Style.STROKE);
         edge.setStrokeWidth(1.2f * density);
-        edge.setColor(0x2E38BDF8); // Subtle Cyan-Sapphire luminous rim
+        edge.setColor(0x2638BDF8); // Subtle Cyan-Sapphire luminous rim
+
+        topHighlight.setStyle(Paint.Style.STROKE);
+        topHighlight.setStrokeWidth(1.2f * density);
+        topHighlight.setColor(0x3838BDF8); // Top specular sheen on the dock band
 
         allAppsPaint.setColor(0x9994A3B8); // Slate
         allAppsPaint.setTextSize(11f * density);
@@ -75,8 +87,20 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             float pad = 12 * density;
             rect.inset(-pad, -pad);
             float radius = 24 * density;
+
+            // Soft outer shadow for floating elevation
+            shadowRect.set(rect.left - 2 * density, rect.top + 4 * density, rect.right + 2 * density, rect.bottom + 8 * density);
+            c.drawRoundRect(shadowRect, radius + 2 * density, radius + 2 * density, shadow);
+
+            // Floating glass band
             c.drawRoundRect(rect, radius, radius, band);
             c.drawRoundRect(rect, radius, radius, edge);
+
+            // Subtle top highlight
+            c.save();
+            c.clipRect(rect.left, rect.top, rect.right, rect.top + 3 * density);
+            c.drawRoundRect(rect, radius, radius, topHighlight);
+            c.restore();
         }
 
         // Draw "✦ ALL APPLICATIONS" section title above the first installed app row

@@ -408,7 +408,19 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.icon.setVisibility(View.GONE);
             h.label.setVisibility(View.GONE);
         }
-        h.card.setOnClickListener(v -> launch(e));
+        h.card.setOnClickListener(v -> {
+            if (animations) {
+                float curScale = focusScale();
+                v.animate().scaleX(curScale * 0.96f).scaleY(curScale * 0.96f).setDuration(70)
+                        .withEndAction(() -> {
+                            v.setScaleX(curScale);
+                            v.setScaleY(curScale);
+                            launch(e);
+                        }).start();
+            } else {
+                launch(e);
+            }
+        });
         h.card.setOnLongClickListener(v -> {
             int pos = holder.getBindingAdapterPosition();
             if (pos != RecyclerView.NO_POSITION && listener != null) {
@@ -577,7 +589,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     float focusScale() {
-        return !animations ? 1f : advancedEffects ? 1.07f : 1.06f;
+        return !animations ? 1f : advancedEffects ? 1.075f : 1.065f;
     }
 
     /** A vivid colour sampled from the app's banner (or icon), cached per entry; a card's accent when it set one. */
@@ -716,14 +728,27 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     if (focused) name.setTranslationY(density * 4f);
                 } else {
                     view.animate().scaleX(s).scaleY(s)
-                            .translationY(focused && advancedEffects ? -4f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
-                            .setDuration(focused ? 190 : 150)
-                            .setInterpolator(new DecelerateInterpolator(1.5f))
+                            .translationY(focused && advancedEffects ? -4.5f * density : 0f)
+                            .translationZ(focused && advancedEffects ? 12f * density : 0f)
+                            .setDuration(focused ? 210 : 170)
+                            .setInterpolator(new DecelerateInterpolator(1.8f))
                             .withLayer().start();
                     if (advancedEffects) {
-                        banner.animate().scaleX(focused ? 1.025f : 1f).scaleY(focused ? 1.025f : 1f)
+                        banner.animate().scaleX(focused ? 1.035f : 1f).scaleY(focused ? 1.035f : 1f)
                                 .setDuration(220).start();
+                        if (focused) {
+                            android.graphics.ColorMatrix cm = new android.graphics.ColorMatrix(new float[]{
+                                1.06f, 0, 0, 0, 8,
+                                0, 1.06f, 0, 0, 8,
+                                0, 0, 1.06f, 0, 8,
+                                0, 0, 0, 1.0f, 0
+                            });
+                            banner.setColorFilter(new android.graphics.ColorMatrixColorFilter(cm));
+                        } else {
+                            banner.clearColorFilter();
+                        }
+                    } else {
+                        banner.clearColorFilter();
                     }
                     name.animate().alpha(focused ? 1f : 0f)
                             .translationY(focused ? density * 4f : -density * 6f)
