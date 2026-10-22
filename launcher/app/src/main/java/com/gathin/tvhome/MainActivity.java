@@ -475,12 +475,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return true;
         });
 
-        // Keep focus on the top bar at its ends and at the top: Android's focus finder would otherwise
-        // jump to a tile far below when there is nothing in that direction.
+        // Keep focus on the top bar at its ends and at the top: circular wrap-around navigation
         boolean rtlMenuBar = getResources().getBoolean(R.bool.rtl_menu_bar);
         View.OnKeyListener pillKeys = (v, keyCode, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                // Wrap around from top bar to bottom row of apps
+                int count = adapter.appCount();
+                if (count > 0) {
+                    int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
+                    int col = lastFocused % COLUMNS;
+                    focusTile(Math.min(lastRowStart + col, count - 1));
+                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                    return true;
+                }
+                return true;
+            }
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                 // Back to the dock tile Up came from, not wherever the focus finder lands.
                 focusTile(lastFocused % COLUMNS);
@@ -489,8 +499,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : R.id.btnWifi;
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
             int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == leftButton;
-            return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && v.getId() == leftButton) {
+                // Wrap around horizontally from left button to right button
+                findViewById(rightButton).requestFocus();
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_LEFT);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton) {
+                // Wrap around horizontally from right button to left button
+                findViewById(leftButton).requestFocus();
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_RIGHT);
+                return true;
+            }
+            return false;
         };
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
@@ -1300,7 +1321,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         addTileMenuRow(rows, popup, "🔍 Search Apps", this::showSearchDialog);
 
-        addTileMenuRow(rows, popup, "⚙️ Fire TV Settings", () -> open(systemIntent(Settings.ACTION_SETTINGS)));
+        addTileMenuRow(rows, popup, "⚙️ Fire TV Settings", this::showFireTvSettingsMenu);
 
         addTileMenuRow(rows, popup, "🛠️ Launcher Preferences", () -> startActivityForResult(
                 new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST));
@@ -1309,6 +1330,101 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         popup.setWidth(Math.max((int) (270 * density), panel.getMeasuredWidth()));
+
+        dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar)
+                ? Gravity.START : Gravity.END);
+        if (rows.getChildCount() > 1) {
+            rows.getChildAt(1).requestFocus();
+        }
+    }
+
+    private void showFireTvSettingsMenu() {
+        if (openPopup != null) openPopup.dismiss();
+        View anchor = findViewById(R.id.btnSettings);
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+
+        TextView header = new TextView(this);
+        header.setText("⚙️ Fire TV System Settings");
+        header.setTextSize(16f);
+        header.setTextColor(0xFFFFFFFF);
+        header.setTypeface(null, Typeface.BOLD);
+        header.setPadding((int) (16 * density), (int) (12 * density), (int) (16 * density), (int) (6 * density));
+        header.setFocusable(false);
+        rows.addView(header);
+
+        PopupWindow popup = glassPopup(panel, (int) (310 * density));
+
+        addTileMenuRow(rows, popup, "⚙️ All Fire TV Settings (Full Menu)", () -> {
+            try {
+                startActivity(new Intent().setComponent(new ComponentName("com.amazon.tv.launcher", "com.amazon.tv.launcher.ui.MainSettingsActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                open(systemIntent(Settings.ACTION_SETTINGS));
+            }
+        });
+
+        addTileMenuRow(rows, popup, "🌐 Network & Wi-Fi", () -> {
+            try {
+                startActivity(new Intent().setComponent(new ComponentName("com.amazon.tv.settings.v2", "com.amazon.tv.settings.v2.tv.network.NetworkActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                open(systemIntent(Settings.ACTION_WIFI_SETTINGS));
+            }
+        });
+
+        addTileMenuRow(rows, popup, "🖥️ Display & Sounds", () -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                open(systemIntent(Settings.ACTION_SETTINGS));
+            }
+        });
+
+        addTileMenuRow(rows, popup, "📱 Applications & Storage", () -> {
+            try {
+                startActivity(new Intent().setComponent(new ComponentName("com.amazon.tv.settings.v2", "com.amazon.tv.settings.v2.tv.applications.ApplicationsActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                open(systemIntent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+            }
+        });
+
+        addTileMenuRow(rows, popup, "🎮 Controllers & Bluetooth Devices", () -> {
+            try {
+                startActivity(new Intent().setComponent(new ComponentName("com.amazon.tv.settings.v2", "com.amazon.tv.settings.v2.tv.controllers_bluetooth_devices.ControllersAndBluetoothActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                open(systemIntent(Settings.ACTION_SETTINGS));
+            }
+        });
+
+        addTileMenuRow(rows, popup, "🎛️ Equipment Control (TV & Power)", () -> {
+            try {
+                startActivity(new Intent().setComponent(new ComponentName("com.amazon.tv.devicecontrolsettings", "com.amazon.tv.devicecontrolsettings.screens.main_menu.OzOobeSettingsActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                open(systemIntent(Settings.ACTION_SETTINGS));
+            }
+        });
+
+        addTileMenuRow(rows, popup, "📺 My Fire TV (Device / Restart / About)", () -> {
+            try {
+                startActivity(new Intent().setComponent(new ComponentName("com.amazon.tv.settings.v2", "com.amazon.tv.settings.v2.tv.device.DeviceActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                open(systemIntent(Settings.ACTION_SETTINGS));
+            }
+        });
+
+        addTileMenuRow(rows, popup, "♿ Accessibility Settings", () -> {
+            open(systemIntent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        });
+
+        addTileMenuRow(rows, popup, "👤 Amazon Account & Profile", () -> {
+            try {
+                startActivity(new Intent().setComponent(new ComponentName("com.amazon.tv.settings.v2", "com.amazon.tv.settings.v2.tv.my_account.MyAccountActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                open(systemIntent(Settings.ACTION_SETTINGS));
+            }
+        });
+
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        popup.setWidth(Math.max((int) (310 * density), panel.getMeasuredWidth()));
 
         dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar)
                 ? Gravity.START : Gravity.END);
@@ -1350,7 +1466,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         if (!isWallpaper) {
             TextView section = new TextView(this);
-            section.setText("Select Gradient Preset:");
+            section.setText("Select Ambient Gradient Preset:");
             section.setTextSize(12f);
             section.setTextColor(0xB36EC1FF);
             section.setPadding((int) (16 * density), (int) (8 * density), (int) (16 * density), (int) (4 * density));
@@ -1360,25 +1476,59 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             String curGrad = btm.getGradientPreset();
             addGradientRow(rows, popup, btm, "Aurora Sapphire (Cinematic Blue - Default)", BackdropThemeManager.GRAD_SAPPHIRE, curGrad);
             addGradientRow(rows, popup, btm, "Dynamic App Bloom (Auto-match)", BackdropThemeManager.GRAD_DYNAMIC, curGrad);
-            addGradientRow(rows, popup, btm, "Midnight Ruby", BackdropThemeManager.GRAD_RUBY, curGrad);
+            addGradientRow(rows, popup, btm, "Crimson Stark (Iron Man Red & Gold)", BackdropThemeManager.GRAD_CRIMSON_STARK, curGrad);
+            addGradientRow(rows, popup, btm, "Asgardian Gold (Thor Electric)", BackdropThemeManager.GRAD_ASGARDIAN_GOLD, curGrad);
+            addGradientRow(rows, popup, btm, "Vibranium Glow (Wakanda Purple)", BackdropThemeManager.GRAD_VIBRANIUM, curGrad);
+            addGradientRow(rows, popup, btm, "Quantum Realm Cyan", BackdropThemeManager.GRAD_QUANTUM_CYAN, curGrad);
+            addGradientRow(rows, popup, btm, "Neon Cyberpunk (Magenta & Cyan)", BackdropThemeManager.GRAD_NEON_CYBER, curGrad);
+            addGradientRow(rows, popup, btm, "Midnight Ruby (Deep Red)", BackdropThemeManager.GRAD_RUBY, curGrad);
             addGradientRow(rows, popup, btm, "Cyber Emerald (Dark Green)", BackdropThemeManager.GRAD_EMERALD, curGrad);
             addGradientRow(rows, popup, btm, "Royal Amethyst (Imperial Purple)", BackdropThemeManager.GRAD_AMETHYST, curGrad);
             addGradientRow(rows, popup, btm, "Sunset Ember (Warm Orange)", BackdropThemeManager.GRAD_AMBER, curGrad);
-            addGradientRow(rows, popup, btm, "OLED Pure Black (Zero Glow)", BackdropThemeManager.GRAD_OLED, curGrad);
+            addGradientRow(rows, popup, btm, "OLED Pure Black (Zero Backlight)", BackdropThemeManager.GRAD_OLED, curGrad);
         } else {
-            TextView section = new TextView(this);
-            section.setText("Select 4K TV Wallpaper:");
-            section.setTextSize(12f);
-            section.setTextColor(0xB36EC1FF);
-            section.setPadding((int) (16 * density), (int) (8 * density), (int) (16 * density), (int) (4 * density));
-            section.setFocusable(false);
-            rows.addView(section);
+            TextView sectionMarvel = new TextView(this);
+            sectionMarvel.setText("🦸 Marvel & Avengers 4K Collection:");
+            sectionMarvel.setTextSize(12f);
+            sectionMarvel.setTextColor(0xFFFFD54F);
+            sectionMarvel.setPadding((int) (16 * density), (int) (8 * density), (int) (16 * density), (int) (4 * density));
+            sectionMarvel.setFocusable(false);
+            rows.addView(sectionMarvel);
 
             String curWall = btm.getWallpaperPreset();
-            addWallpaperRow(rows, popup, btm, "Cosmic Deep Space", BackdropThemeManager.WALL_SPACE, curWall);
-            addWallpaperRow(rows, popup, btm, "Minimalist Dark Peaks", BackdropThemeManager.WALL_PEAKS, curWall);
-            addWallpaperRow(rows, popup, btm, "Obsidian Abstract Waves", BackdropThemeManager.WALL_OBSIDIAN, curWall);
-            addWallpaperRow(rows, popup, btm, "Nordic Aurora Borealis", BackdropThemeManager.WALL_AURORA, curWall);
+            addWallpaperRow(rows, popup, btm, "⚡ Avengers Assemble Logo", BackdropThemeManager.WALL_AVENGERS, curWall);
+            addWallpaperRow(rows, popup, btm, "🔴 Iron Man Arc Reactor", BackdropThemeManager.WALL_IRON_MAN, curWall);
+            addWallpaperRow(rows, popup, btm, "🛡️ Captain America Shield", BackdropThemeManager.WALL_CAPTAIN_AMERICA, curWall);
+            addWallpaperRow(rows, popup, btm, "⚡ Thor God of Thunder", BackdropThemeManager.WALL_THOR, curWall);
+            addWallpaperRow(rows, popup, btm, "🕷️ Spider-Man Neon Web", BackdropThemeManager.WALL_SPIDER_MAN, curWall);
+            addWallpaperRow(rows, popup, btm, "🐾 Wakanda Vibranium", BackdropThemeManager.WALL_BLACK_PANTHER, curWall);
+            addWallpaperRow(rows, popup, btm, "💎 Infinity Gauntlet Stones", BackdropThemeManager.WALL_INFINITY, curWall);
+            addWallpaperRow(rows, popup, btm, "🧪 Hulk Gamma Overdrive", BackdropThemeManager.WALL_HULK, curWall);
+            addWallpaperRow(rows, popup, btm, "🔮 Doctor Strange Mandalas", BackdropThemeManager.WALL_DR_STRANGE, curWall);
+            addWallpaperRow(rows, popup, btm, "🌀 Quantum Realm Vortices", BackdropThemeManager.WALL_QUANTUM, curWall);
+
+            TextView sectionModern = new TextView(this);
+            sectionModern.setText("🌌 Modern 4K Nature & Scenic:");
+            sectionModern.setTextSize(12f);
+            sectionModern.setTextColor(0xB36EC1FF);
+            sectionModern.setPadding((int) (16 * density), (int) (12 * density), (int) (16 * density), (int) (4 * density));
+            sectionModern.setFocusable(false);
+            rows.addView(sectionModern);
+
+            addWallpaperRow(rows, popup, btm, "🌌 Cosmic Deep Space", BackdropThemeManager.WALL_SPACE, curWall);
+            addWallpaperRow(rows, popup, btm, "🏔️ Minimalist Dark Peaks", BackdropThemeManager.WALL_PEAKS, curWall);
+            addWallpaperRow(rows, popup, btm, "🌊 Obsidian Abstract Waves", BackdropThemeManager.WALL_OBSIDIAN, curWall);
+            addWallpaperRow(rows, popup, btm, "❄️ Nordic Aurora Borealis", BackdropThemeManager.WALL_AURORA, curWall);
+            addWallpaperRow(rows, popup, btm, "🕹️ 80s Neon Synthwave Grid", BackdropThemeManager.WALL_SYNTHWAVE, curWall);
+            addWallpaperRow(rows, popup, btm, "💻 Cyber Matrix Code Rain", BackdropThemeManager.WALL_MATRIX, curWall);
+            addWallpaperRow(rows, popup, btm, "☀️ Solar Supernova Flare", BackdropThemeManager.WALL_SUPERNOVA, curWall);
+            addWallpaperRow(rows, popup, btm, "🏜️ Midnight Sand Dunes", BackdropThemeManager.WALL_DESERT_DUNE, curWall);
+            addWallpaperRow(rows, popup, btm, "🌊 Bioluminescent Abyss", BackdropThemeManager.WALL_ABYSS, curWall);
+            addWallpaperRow(rows, popup, btm, "🏛️ Luxury Gold & Slate Tiles", BackdropThemeManager.WALL_GEOMETRY_LUX, curWall);
+            addWallpaperRow(rows, popup, btm, "🏎️ Stealth Carbon Fiber Weave", BackdropThemeManager.WALL_CARBON_HEX, curWall);
+            addWallpaperRow(rows, popup, btm, "🌸 Neon Tokyo Sakura Night", BackdropThemeManager.WALL_SAKURA, curWall);
+            addWallpaperRow(rows, popup, btm, "💎 Prismatic Crystal Cavern", BackdropThemeManager.WALL_CRYSTALS, curWall);
+            addWallpaperRow(rows, popup, btm, "⚡ Silicon Cyber Motherboard", BackdropThemeManager.WALL_CIRCUIT, curWall);
         }
 
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
@@ -2079,33 +2229,60 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public boolean onTileVerticalKey(int position, int keyCode) {
         int count = adapter.appCount();
+        if (count == 0) return false;
         int target;
-        // Horizontal: swallow the key at a row's ends so focus never wraps to the next row or
-        // escapes up into the top bar. Mid-row moves fall through to the default focus search.
+
+        // Circular Navigation: Left / Right wrap-around on each row
         if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
             boolean forward = rtlAppGrid ? keyCode == KeyEvent.KEYCODE_DPAD_LEFT : keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
             if (forward && position == adapter.focusablePosition(count - 1) && adapter.isLibraryAt(count)) {
                 focusLibrary();
                 return true;
             }
-            // In the dock, the last app is the row's end: the empty slots after it take no focus.
-            int rowCount = position < COLUMNS ? Math.min(count, adapter.dockFilled()) : count;
-            return GridNavigation.atHorizontalEdge(position, rowCount, COLUMNS,
-                    rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
+
+            int rowStart = (position / COLUMNS) * COLUMNS;
+            int rowCount = position < COLUMNS ? Math.min(count, adapter.dockFilled()) : Math.min(count - rowStart, COLUMNS);
+            int rowEnd = rowStart + Math.max(1, rowCount) - 1;
+
+            if (forward) {
+                if (position >= rowEnd) {
+                    // Right end reached: wrap around to left-most item of this row!
+                    focusTile(rowStart);
+                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_RIGHT);
+                    return true;
+                }
+            } else {
+                if (position <= rowStart) {
+                    // Left end reached: wrap around to right-most item of this row!
+                    focusTile(rowEnd);
+                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_LEFT);
+                    return true;
+                }
+            }
+            return false;
         }
+
+        // Circular Navigation: Up / Down wrap-around
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) {
+                // Dock row (top): allow moving up to header pills (Wi-Fi/Settings)
+                return false;
+            }
             target = position - COLUMNS;
         } else {
+            // Keycode DPAD_DOWN
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
             if (position >= lastRowStart) {
-                if (adapter.isLibraryAt(count)) focusLibrary();
+                // Bottom row reached: wrap around to top row!
+                int col = position % COLUMNS;
+                target = Math.min(col, count - 1);
+                focusTile(target);
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_DOWN);
                 return true;
             }
             target = Math.min(position + COLUMNS, count - 1);
         }
         focusTile(target);
-        // The default focus search clicks for Left/Right; Up/Down are handled here, so click for them too.
         grid.playSoundEffect(keyCode == KeyEvent.KEYCODE_DPAD_UP
                 ? SoundEffectConstants.NAVIGATION_UP : SoundEffectConstants.NAVIGATION_DOWN);
         return true;

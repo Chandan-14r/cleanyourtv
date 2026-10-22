@@ -2,6 +2,7 @@ package com.gathin.tvhome;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -25,11 +26,26 @@ public final class QuickSettingsActivity extends Activity {
         setContentView(R.layout.activity_quick_settings);
         findViewById(R.id.scrim).setOnClickListener(v -> finish());
         LinearLayout rows = findViewById(R.id.rows);
-        addRow(rows, R.drawable.ic_settings, R.string.tv_settings, 0, new Intent(Settings.ACTION_SETTINGS));
+
+        Intent fireTvSettings = new Intent();
+        fireTvSettings.setComponent(new ComponentName("com.amazon.tv.launcher", "com.amazon.tv.launcher.ui.MainSettingsActivity"));
+        if (getPackageManager().resolveActivity(fireTvSettings, 0) == null) {
+            fireTvSettings = new Intent(Settings.ACTION_SETTINGS);
+        }
+        addRow(rows, R.drawable.ic_settings, R.string.tv_settings, 0, fireTvSettings);
+
         addRow(rows, R.drawable.ic_picture, R.string.quick_picture, 0, new Intent(Settings.ACTION_DISPLAY_SETTINGS));
         addRow(rows, R.drawable.ic_wifi, R.string.quick_network, 0, new Intent(Settings.ACTION_WIFI_SETTINGS));
         addRow(rows, R.drawable.ic_apps, R.string.quick_apps, R.string.quick_apps_hint,
                 new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+
+        // Equipment control shortcut
+        Intent eqIntent = new Intent();
+        eqIntent.setComponent(new ComponentName("com.amazon.tv.devicecontrolsettings", "com.amazon.tv.devicecontrolsettings.screens.main_menu.OzOobeSettingsActivity"));
+        if (getPackageManager().resolveActivity(eqIntent, 0) != null) {
+            addRow(rows, R.drawable.ic_settings, R.string.equipment_control_title, 0, eqIntent);
+        }
+
         // Through Home, so it rebuilds with the new choices when Launcher settings closes.
         addRow(rows, R.drawable.ic_home_settings, R.string.launcher_settings, 0,
                 new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_LAUNCHER_SETTINGS));

@@ -85,7 +85,9 @@ public class HomeKeyService extends AccessibilityService {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root != null) {
                 CharSequence pkg = root.getPackageName();
-                if (pkg != null) {
+                CharSequence cls = root.getClassName();
+                String clsStr = cls != null ? cls.toString() : "";
+                if (pkg != null && !clsStr.contains("Settings") && !clsStr.contains("MainSettingsActivity")) {
                     String pkgStr = pkg.toString();
                     if (AMAZON_LAUNCHER.equals(pkgStr) || AMAZON_HOMESTARTER.equals(pkgStr)) {
                         launchCleanYourTV();
@@ -110,6 +112,9 @@ public class HomeKeyService extends AccessibilityService {
                     reader = new BufferedReader(new InputStreamReader(process.getInputStream()), 1024);
                     String line;
                     while (logcatRunning && (line = reader.readLine()) != null) {
+                        if (line.contains("MainSettingsActivity") || line.contains(".settings.") || line.contains("SettingsActivity")) {
+                            continue; // Preserve Fire TV system settings!
+                        }
                         if (line.contains("cmp=com.amazon.tv.launcher") || line.contains("cmp=com.amazon.firehomestarter")) {
                             if (line.contains("START") || line.contains("category.HOME") || line.contains("HomeActivity")) {
                                 handler.post(this::launchCleanYourTV);
@@ -166,8 +171,9 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     private void startMainActivityDirect() {
+        Log.i(TAG, "startMainActivityDirect requested");
         Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         try {
             startActivity(intent);
         } catch (Exception e) {
@@ -186,6 +192,7 @@ public class HomeKeyService extends AccessibilityService {
     protected boolean onKeyEvent(KeyEvent event) {
         int keyCode = event.getKeyCode();
         int action = event.getAction();
+        Log.i(TAG, "onKeyEvent called: keyCode=" + keyCode + " action=" + action + " isForeground=" + MainActivity.isForeground);
 
         if (keyCode == KeyEvent.KEYCODE_HOME || keyCode == KeyEvent.KEYCODE_ALL_APPS) {
             if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
@@ -243,6 +250,15 @@ public class HomeKeyService extends AccessibilityService {
 
         if (pkg.equals(getPackageName())) {
             return;
+        }
+
+        // Never kill Fire TV Settings or Preference screens!
+        CharSequence clsSeq = event.getClassName();
+        if (clsSeq != null) {
+            String cls = clsSeq.toString();
+            if (cls.contains("Settings") || cls.contains("MainSettingsActivity") || cls.contains("Preference") || cls.contains("OzOobe")) {
+                return;
+            }
         }
 
         if (pkg.equals(AMAZON_LAUNCHER) || pkg.equals(AMAZON_HOMESTARTER)) {
