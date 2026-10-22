@@ -55,6 +55,9 @@ public class HomeKeyService extends AccessibilityService {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int retryCount = 0;
     private boolean isRetrying = false;
+    private static final int RETRY_INTERVAL_MS = 100;
+    private static final int MAX_RETRIES = 60; // 6.0 seconds total, covering Fire OS 7's 5.0s stopAppSwitches window
+    private long lastBackDownTime = 0;
 
     // Zero-latency background logcat monitor
     private Thread logcatThread = null;
@@ -69,10 +72,10 @@ public class HomeKeyService extends AccessibilityService {
         @Override
         public void run() {
             if (!isRetrying) return;
-            if (retryCount < 30) { // Retries every 80ms for up to 2.4s
+            if (retryCount < MAX_RETRIES) {
                 retryCount++;
                 launchMainActivity();
-                handler.postDelayed(this, 80);
+                handler.postDelayed(this, RETRY_INTERVAL_MS);
             } else {
                 isRetrying = false;
                 hideMask();
@@ -328,7 +331,7 @@ public class HomeKeyService extends AccessibilityService {
         isRetrying = true;
         retryCount = 0;
         handler.removeCallbacks(retryRunnable);
-        handler.postDelayed(retryRunnable, 80);
+        handler.postDelayed(retryRunnable, RETRY_INTERVAL_MS);
 
         if (MainActivity.wasRecentlyForeground()) {
             MainActivity main = MainActivity.instance;
@@ -355,6 +358,25 @@ public class HomeKeyService extends AccessibilityService {
                 launchCleanYourTV();
             }
             return true;
+        }
+
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            long now = System.currentTimeMillis();
+            if (action == KeyEvent.ACTION_DOWN) {
+                if (now - lastBackDownTime < 450) {
+                    lastBackDownTime = 0;
+                    launchCleanYourTV();
+                    return true;
+                }
+                lastBackDownTime = now;
+            }
+        }
+
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                launchCleanYourTV();
+                return true;
+            }
         }
 
         if (isSettingsKey(event)) {
