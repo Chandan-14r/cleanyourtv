@@ -2,42 +2,27 @@ package com.gathin.tvhome;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
-import android.app.ActivityManager;
-import android.content.ComponentName;
 import android.content.Intent;
-import android.graphics.PixelFormat;
-import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
-import android.util.TypedValue;
-import android.view.Gravity;
 import android.view.KeyEvent;
-import android.view.View;
-import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.FrameLayout;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Ultra-fast zero-latency Home button interception and window manager for Fire TV:
- * - Uses continuous real-time system logcat streaming to detect Amazon Home launch at 0ms.
- * - Instantly displays the Aurora Sapphire stealth overlay BEFORE Amazon renders an ad frame.
- * - Pops Amazon Launcher off the stack immediately via GLOBAL_ACTION_BACK (<50ms).
- * - Executes a precise milestone transition schedule covering Fire OS 7's 5.0-second AMS lock.
- * - Intercepts remote MENU (☰) and double-press BACK for instantaneous (<100ms) direct return.
- * - Seamlessly reveals CleanYourTV the moment it resumes, completely surviving reboots autonomously.
+ * Clean, lightweight, rock-solid Home key interception for Fire TV:
+ * - Listens for Amazon Launcher foreground appearance via zero-latency logcat and accessibility events.
+ * - Instantly redirects to CleanYourTV MainActivity with FLAG_ACTIVITY_NEW_TASK.
+ * - Zero intrusive overlays, zero black screen masks, zero screen freezing.
+ * - Provides 0ms instant shortcut via remote MENU (☰) and double-press BACK from any app.
+ * - Completely autonomous and survives reboots permanently.
  */
 public class HomeKeyService extends AccessibilityService {
 
@@ -53,60 +38,14 @@ public class HomeKeyService extends AccessibilityService {
     private Map<Integer, String> appKeys = Collections.emptyMap();
 
     private long lastLaunchTime = 0;
-
-    private WindowManager windowManager;
-    private View maskView = null;
-    private boolean maskAttached = false;
-    private static final long MASK_HARD_TIMEOUT_MS = 6500; // 6.5s maximum safety backstop
-
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private final int[] TRANSITION_SCHEDULE_MS = {200, 600, 1500, 3000, 4500, 5050, 5300};
-    private final List<Runnable> pendingTransitionRunnables = new ArrayList<>();
     private long lastBackDownTime = 0;
 
-    // Zero-latency background logcat monitor
+    private final Handler handler = new Handler(Looper.getMainLooper());
     private Thread logcatThread = null;
     private volatile boolean logcatRunning = false;
 
-    private final Runnable maskTimeoutRunnable = () -> {
-        Log.w(TAG, "Mask hard-timeout reached; safety removing mask");
-        hideMask();
-    };
-
     public static void notifyCleanYourTVResumed() {
-        HomeKeyService current = instance;
-        if (current != null) {
-            current.onMainActivityResumed();
-        }
-    }
-
-    public void onMainActivityResumed() {
-        handler.post(() -> {
-            cancelPendingTransitions();
-            hideMask();
-        });
-    }
-
-    private void cancelPendingTransitions() {
-        for (Runnable r : pendingTransitionRunnables) {
-            handler.removeCallbacks(r);
-        }
-        pendingTransitionRunnables.clear();
-    }
-
-    private void scheduleTransitions() {
-        cancelPendingTransitions();
-        for (int delay : TRANSITION_SCHEDULE_MS) {
-            Runnable r = () -> {
-                if (MainActivity.isForeground) {
-                    hideMask();
-                    return;
-                }
-                launchMainActivity();
-            };
-            pendingTransitionRunnables.add(r);
-            handler.postDelayed(r, delay);
-        }
+        // No-op hook for compatibility with MainActivity
     }
 
     @Override
@@ -119,36 +58,29 @@ public class HomeKeyService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         settingsScancodes = getResources().getIntArray(R.array.settings_key_scancodes);
         Config config = Config.load(this);
         settingsKeycodes = config.settingsKeycodes;
         settingsPanel = config.settingsKeyPanel;
         appKeys = RemoteKeys.parseAppKeys(config.appKeys);
 
-        // Explicitly register runtime key filtering flags
         try {
             AccessibilityServiceInfo info = getServiceInfo();
             if (info == null) {
                 info = new AccessibilityServiceInfo();
             }
-            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED | AccessibilityEvent.TYPE_WINDOWS_CHANGED;
+            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
             info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
-            info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
-                    | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+            info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
             setServiceInfo(info);
-            Log.i(TAG, "setServiceInfo SUCCESS! flags=" + info.flags);
+            Log.i(TAG, "HomeKeyService connected successfully");
         } catch (Throwable t) {
-            Log.e(TAG, "setServiceInfo FAILED", t);
+            Log.e(TAG, "setServiceInfo notice", t);
         }
 
-        // 1. Prewarm WindowManager overlay render pipeline
-        prewarmMask();
-
-        // 2. Start zero-latency logcat monitor daemon
         startLogcatMonitor();
 
-        // 3. Check active window; if Amazon launcher is running, immediately take over
+        // Check if Amazon launcher is already open upon service connection
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root != null) {
@@ -156,57 +88,18 @@ public class HomeKeyService extends AccessibilityService {
                 if (pkg != null) {
                     String pkgStr = pkg.toString();
                     if (AMAZON_LAUNCHER.equals(pkgStr) || AMAZON_HOMESTARTER.equals(pkgStr)) {
-                        Log.i(TAG, "onServiceConnected: Detected " + pkgStr + " in active window, immediately triggering launchCleanYourTV()");
                         launchCleanYourTV();
                     }
                 }
                 try { root.recycle(); } catch (Throwable ignored) {}
             }
-        } catch (Throwable t) {
-            Log.w(TAG, "onServiceConnected getRootInActiveWindow check failed", t);
-        }
+        } catch (Throwable ignored) {}
     }
 
-    /**
-     * Prewarms the WindowManager overlay path with a tiny 1x1 view so GPU shaders
-     * and window tokens are pre-cached, eliminating cold-start overlay latency.
-     */
-    private void prewarmMask() {
-        handler.postDelayed(() -> {
-            try {
-                if (windowManager == null) {
-                    windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-                }
-                if (windowManager != null && !maskAttached) {
-                    View warm = new View(this);
-                    WindowManager.LayoutParams lp = getMaskLayoutParams();
-                    lp.width = 1;
-                    lp.height = 1;
-                    windowManager.addView(warm, lp);
-                    handler.postDelayed(() -> {
-                        try {
-                            if (warm.isAttachedToWindow() && windowManager != null) {
-                                windowManager.removeView(warm);
-                            }
-                        } catch (Throwable ignored) {}
-                    }, 80);
-                    Log.i(TAG, "Overlay render pipeline successfully prewarmed");
-                }
-            } catch (Throwable t) {
-                Log.w(TAG, "prewarmMask notice", t);
-            }
-        }, 500);
-    }
-
-    /**
-     * Spawns a high-priority background thread to stream ActivityManager logcat events.
-     * Fires at 0ms the moment PhoneWindowManager issues the HOME intent.
-     */
     private void startLogcatMonitor() {
         if (logcatRunning) return;
         logcatRunning = true;
         logcatThread = new Thread(() -> {
-            Log.i(TAG, "Zero-latency logcat monitor active");
             while (logcatRunning) {
                 Process process = null;
                 BufferedReader reader = null;
@@ -219,13 +112,12 @@ public class HomeKeyService extends AccessibilityService {
                     while (logcatRunning && (line = reader.readLine()) != null) {
                         if (line.contains("cmp=com.amazon.tv.launcher") || line.contains("cmp=com.amazon.firehomestarter")) {
                             if (line.contains("START") || line.contains("category.HOME") || line.contains("HomeActivity")) {
-                                Log.i(TAG, ">>> [0ms Trigger] Detected Amazon Launcher start in logcat: " + line);
                                 handler.post(this::launchCleanYourTV);
                             }
                         }
                     }
                 } catch (Throwable t) {
-                    Log.w(TAG, "Logcat monitor exception: " + t.getMessage());
+                    Log.w(TAG, "Logcat monitor notice: " + t.getMessage());
                 } finally {
                     if (reader != null) {
                         try { reader.close(); } catch (Throwable ignored) {}
@@ -243,215 +135,44 @@ public class HomeKeyService extends AccessibilityService {
         logcatThread.start();
     }
 
-    /**
-     * Builds a premium Aurora Sapphire transition overlay:
-     * - Uses the signature deep midnight navy gradient (#07111F to #0B1E38)
-     * - If a recent dashboard snapshot exists, renders it instantly so the transition is imperceptible
-     */
-    private View createMaskView() {
-        FrameLayout container = new FrameLayout(this);
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xFF07111F, 0xFF0B1E38, 0xFF050B14});
-        container.setBackground(bg);
-
-        android.graphics.Bitmap snap = MainActivity.sLastSnapshot;
-        if (snap != null && !snap.isRecycled()) {
-            ImageView iv = new ImageView(this);
-            iv.setScaleType(ImageView.ScaleType.FIT_XY);
-            iv.setImageBitmap(snap);
-            container.addView(iv, new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT));
-
-            View dim = new View(this);
-            dim.setBackgroundColor(0x33000000);
-            container.addView(dim, new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT));
-        } else {
-            LinearLayout content = new LinearLayout(this);
-            content.setOrientation(LinearLayout.VERTICAL);
-            content.setGravity(Gravity.CENTER);
-
-            TextView title = new TextView(this);
-            title.setText("CLEANYOURTV");
-            title.setTextColor(0xFF38BDF8); // Aurora Cyan
-            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
-            title.setTypeface(Typeface.DEFAULT_BOLD);
-            title.setLetterSpacing(0.15f);
-            content.addView(title);
-
-            TextView status = new TextView(this);
-            status.setText("Returning Home...");
-            status.setTextColor(0xFF94A3B8); // Slate 400
-            status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-            status.setPadding(0, 16, 0, 0);
-            content.addView(status);
-
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT);
-            lp.gravity = Gravity.CENTER;
-            container.addView(content, lp);
-        }
-
-        // Bottom subtle shortcut pill: "Press ☰ for Instant Return"
-        TextView hint = new TextView(this);
-        hint.setText("Press  ☰  for Instant Return");
-        hint.setTextColor(0x8894A3B8);
-        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        hint.setPadding(24, 10, 24, 10);
-        android.graphics.drawable.GradientDrawable pill = new android.graphics.drawable.GradientDrawable();
-        pill.setColor(0x22FFFFFF);
-        pill.setCornerRadius(20);
-        hint.setBackground(pill);
-
-        FrameLayout.LayoutParams hintLp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT);
-        hintLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        hintLp.bottomMargin = 60;
-        container.addView(hint, hintLp);
-
-        return container;
-    }
-
-    private WindowManager.LayoutParams getMaskLayoutParams() {
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                PixelFormat.TRANSLUCENT);
-        params.gravity = Gravity.FILL;
-        return params;
-    }
-
-    private synchronized void showMask() {
-        if (maskAttached || MainActivity.isForeground) return;
-        Runnable attach = () -> {
-            try {
-                if (maskAttached || MainActivity.isForeground) return;
-                if (windowManager == null) {
-                    windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-                }
-                if (windowManager != null) {
-                    maskView = createMaskView();
-                    windowManager.addView(maskView, getMaskLayoutParams());
-                    maskAttached = true;
-                    Log.i(TAG, "Aurora Sapphire stealth mask attached successfully");
-                    handler.removeCallbacks(maskTimeoutRunnable);
-                    handler.postDelayed(maskTimeoutRunnable, MASK_HARD_TIMEOUT_MS);
-                }
-            } catch (Throwable t) {
-                Log.w(TAG, "showMask notice", t);
-            }
-        };
-
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            attach.run();
-        } else {
-            handler.post(attach);
-        }
-    }
-
-    private synchronized void hideMask() {
-        Runnable detach = () -> {
-            handler.removeCallbacks(maskTimeoutRunnable);
-            if (!maskAttached || maskView == null) return;
-            final View viewToRemove = maskView;
-            maskAttached = false;
-            maskView = null;
-
-            try {
-                if (viewToRemove.isAttachedToWindow() && windowManager != null) {
-                    viewToRemove.animate()
-                            .alpha(0f)
-                            .setDuration(160)
-                            .withEndAction(() -> {
-                                try {
-                                    if (viewToRemove.isAttachedToWindow() && windowManager != null) {
-                                        windowManager.removeView(viewToRemove);
-                                    }
-                                } catch (Throwable ignored) {}
-                            }).start();
-                }
-            } catch (Throwable t) {
-                try {
-                    if (viewToRemove.isAttachedToWindow() && windowManager != null) {
-                        windowManager.removeView(viewToRemove);
-                    }
-                } catch (Throwable ignored) {}
-            }
-        };
-
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            detach.run();
-        } else {
-            handler.post(detach);
-        }
-    }
-
-    private void launchMainActivity() {
-        // 1. Instant task reorder to front
-        if (MainActivity.mainTaskId > 0) {
-            try {
-                ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
-                if (am != null) {
-                    am.moveTaskToFront(MainActivity.mainTaskId, ActivityManager.MOVE_TASK_NO_USER_ACTION);
-                }
-            } catch (Throwable ignored) {}
-        }
-
-        // 2. Direct explicit intent to MainActivity (without CATEGORY_HOME to avoid Fire OS intercept)
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP
-                | Intent.FLAG_ACTIVITY_NO_ANIMATION);
-        try {
-            startActivity(intent);
-        } catch (Exception e) {
-            Log.w(TAG, "startActivity failed", e);
-        }
-    }
-
     private void launchCleanYourTV() {
         if (MainActivity.isForeground) {
             return;
         }
         long now = System.currentTimeMillis();
-        if (now - lastLaunchTime < 1000) return;
+        if (now - lastLaunchTime < 400) {
+            return;
+        }
         lastLaunchTime = now;
 
-        // 1. Immediately display Aurora Sapphire stealth mask (<16ms, prevents Amazon ads from showing)
-        showMask();
+        startMainActivityDirect();
 
-        // 2. Pop Amazon launcher via system BACK if CleanYourTV or prior app is directly beneath
-        performGlobalAction(GLOBAL_ACTION_BACK);
+        // Follow up with scheduled retries across Fire OS app switch window
+        handler.postDelayed(() -> {
+            if (!MainActivity.isForeground) startMainActivityDirect();
+        }, 300);
 
-        MainActivity main = MainActivity.instance;
-        if (main != null) {
-            main.runOnUiThread(main::resetToTop);
-        }
+        handler.postDelayed(() -> {
+            if (!MainActivity.isForeground) startMainActivityDirect();
+        }, 800);
 
-        // 3. Request MainActivity to come to front
-        launchMainActivity();
+        handler.postDelayed(() -> {
+            if (!MainActivity.isForeground) startMainActivityDirect();
+        }, 1800);
 
-        // 4. Schedule measured transition checks across Fire OS 7's 5.0-second AMS lock window
-        scheduleTransitions();
+        handler.postDelayed(() -> {
+            if (!MainActivity.isForeground) startMainActivityDirect();
+        }, 5050);
     }
 
-    private void launchCleanYourTVFast() {
-        lastLaunchTime = System.currentTimeMillis();
-        cancelPendingTransitions();
-        hideMask();
-        launchMainActivity();
+    private void startMainActivityDirect() {
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(intent);
+        } catch (Exception e) {
+            Log.w(TAG, "startActivity notice", e);
+        }
     }
 
     private boolean isSettingsKey(KeyEvent event) {
@@ -473,24 +194,26 @@ public class HomeKeyService extends AccessibilityService {
             return true;
         }
 
+        // 0ms Instant Home shortcut: Press MENU (☰) from any app to return to CleanYourTV instantly
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                if (!MainActivity.isForeground) {
+                    startMainActivityDirect();
+                    return true;
+                }
+            }
+        }
+
+        // Double-click BACK shortcut: Double press BACK within 450ms opens CleanYourTV instantly
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             long now = System.currentTimeMillis();
             if (action == KeyEvent.ACTION_DOWN) {
                 if (now - lastBackDownTime < 450) {
                     lastBackDownTime = 0;
-                    launchCleanYourTVFast();
+                    startMainActivityDirect();
                     return true;
                 }
                 lastBackDownTime = now;
-            }
-        }
-
-        if (keyCode == KeyEvent.KEYCODE_MENU) {
-            if (action == KeyEvent.ACTION_DOWN) {
-                if (!MainActivity.isForeground) {
-                    launchCleanYourTVFast();
-                    return true;
-                }
             }
         }
 
@@ -518,21 +241,17 @@ public class HomeKeyService extends AccessibilityService {
         if (pkgSeq == null) return;
         String pkg = pkgSeq.toString();
 
-        // STRICT SAFETY: Do NOT react to our own package events.
         if (pkg.equals(getPackageName())) {
             return;
         }
 
         if (pkg.equals(AMAZON_LAUNCHER) || pkg.equals(AMAZON_HOMESTARTER)) {
-            Log.i(TAG, ">>> [Accessibility Backup] detected " + pkg + ", triggering launchCleanYourTV()");
             launchCleanYourTV();
         }
     }
 
     @Override
     public void onInterrupt() {
-        cancelPendingTransitions();
-        hideMask();
     }
 
     @Override
@@ -544,7 +263,5 @@ public class HomeKeyService extends AccessibilityService {
             logcatThread = null;
         }
         if (instance == this) instance = null;
-        cancelPendingTransitions();
-        hideMask();
     }
 }
