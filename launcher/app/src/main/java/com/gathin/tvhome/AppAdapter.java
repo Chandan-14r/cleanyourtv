@@ -394,8 +394,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         h.card.setScaleY(focused && animations ? focusScale() : 1f);
         h.card.setTranslationY(focused && advancedEffects ? -4f * ctx.getResources().getDisplayMetrics().density : 0f);
         h.card.setTranslationZ(focused && advancedEffects ? 8f * ctx.getResources().getDisplayMetrics().density : 0f);
-        h.banner.setScaleX(focused && advancedEffects ? 1.035f : 1f);
-        h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
+        h.banner.setScaleX(focused && advancedEffects ? 1.025f : 1f);
+        h.banner.setScaleY(focused && advancedEffects ? 1.025f : 1f);
         if (e.banner != null) {
             h.banner.setImageDrawable(e.banner);
             h.banner.setVisibility(View.VISIBLE);
@@ -589,7 +589,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     float focusScale() {
-        return !animations ? 1f : advancedEffects ? 1.075f : 1.065f;
+        return !animations ? 1f : advancedEffects ? 1.055f : 1.05f;
     }
 
     /** A vivid colour sampled from the app's banner (or icon), cached per entry; a card's accent when it set one. */
@@ -703,7 +703,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 view.animate().cancel();
                 banner.animate().cancel();
                 name.animate().cancel();
-                float scale = !animations ? 1f : advancedEffects ? 1.07f : 1.06f;
+                float scale = !animations ? 1f : advancedEffects ? 1.055f : 1.05f;
                 float s = focused ? scale : 1f;
                 if (!animations) {
                     view.setScaleX(1f);
@@ -716,43 +716,28 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     name.setTranslationY(0f);
                 } else if (reducedMotion) {
                     view.animate().scaleX(s).scaleY(s)
-                            .translationY(focused && advancedEffects ? -4f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
+                            .translationY(focused && advancedEffects ? -3f * density : 0f)
+                            .translationZ(focused && advancedEffects ? 6f * density : 0f)
                             .setDuration(focused ? 120 : 80)
                             .setInterpolator(new DecelerateInterpolator())
                             .withLayer().start();
                     name.animate().alpha(focused ? 1f : 0f).setDuration(100).start();
-                    // Same place as the full motion's slide ends: the layout's -6dp is only its starting point, and
-                    // left there the name overlaps the zoomed tile.
-                    // Only on focus: snapping it back to -6dp while it fades out would jump it up over the tile.
                     if (focused) name.setTranslationY(density * 4f);
                 } else {
                     view.animate().scaleX(s).scaleY(s)
-                            .translationY(focused && advancedEffects ? -4.5f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 12f * density : 0f)
-                            .setDuration(focused ? 210 : 170)
-                            .setInterpolator(new DecelerateInterpolator(1.8f))
+                            .translationY(focused && advancedEffects ? -4f * density : 0f)
+                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
+                            .setDuration(focused ? 190 : 150)
+                            .setInterpolator(new DecelerateInterpolator(1.6f))
                             .withLayer().start();
                     if (advancedEffects) {
-                        banner.animate().scaleX(focused ? 1.035f : 1f).scaleY(focused ? 1.035f : 1f)
-                                .setDuration(220).start();
-                        if (focused) {
-                            android.graphics.ColorMatrix cm = new android.graphics.ColorMatrix(new float[]{
-                                1.06f, 0, 0, 0, 8,
-                                0, 1.06f, 0, 0, 8,
-                                0, 0, 1.06f, 0, 8,
-                                0, 0, 0, 1.0f, 0
-                            });
-                            banner.setColorFilter(new android.graphics.ColorMatrixColorFilter(cm));
-                        } else {
-                            banner.clearColorFilter();
-                        }
-                    } else {
-                        banner.clearColorFilter();
+                        banner.animate().scaleX(focused ? 1.025f : 1f).scaleY(focused ? 1.025f : 1f)
+                                .setDuration(190).start();
                     }
+                    banner.clearColorFilter();
                     name.animate().alpha(focused ? 1f : 0f)
                             .translationY(focused ? density * 4f : -density * 6f)
-                            .setDuration(190).start();
+                            .setDuration(180).start();
                 }
                 int pos = getBindingAdapterPosition();
                 if (focused && listener != null && pos != RecyclerView.NO_POSITION) {
