@@ -18,6 +18,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -50,7 +51,7 @@ public class HomeKeyService extends AccessibilityService {
     private WindowManager windowManager;
     private View maskView = null;
     private boolean maskAttached = false;
-    private static final long MASK_HARD_TIMEOUT_MS = 2200; // 2.2s maximum safety backstop
+    private static final long MASK_HARD_TIMEOUT_MS = 6500; // 6.5s maximum safety backstop
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int retryCount = 0;
@@ -252,6 +253,17 @@ public class HomeKeyService extends AccessibilityService {
             container.addView(iv, new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT));
+        } else {
+            TextView title = new TextView(this);
+            title.setText("AURORA SAPPHIRE");
+            title.setTextColor(0xFF38BDF8);
+            title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 22);
+            title.setLetterSpacing(0.2f);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT);
+            lp.gravity = Gravity.CENTER;
+            container.addView(title, lp);
         }
         return container;
     }
@@ -272,7 +284,8 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     private synchronized void showMask() {
-        // Overlay mask completely disabled to ensure 0ms blackout, 0ms freeze, and lively home screen
+        // Completely disabled to eliminate all black screens, freezes, and unresponsive delays.
+        // The UI stays completely lively and clean at all times.
     }
 
     private synchronized void hideMask() {
@@ -326,19 +339,21 @@ public class HomeKeyService extends AccessibilityService {
         if (now - lastLaunchTime < 180) return;
         lastLaunchTime = now;
 
-        // Always bring CleanYourTV to front directly without any blackout mask
-        launchMainActivity();
-        isRetrying = true;
-        retryCount = 0;
-        handler.removeCallbacks(retryRunnable);
-        handler.postDelayed(retryRunnable, RETRY_INTERVAL_MS);
-
+        // If CleanYourTV was recently active, instantly dismiss Amazon Launcher via system BACK
+        // restoring CleanYourTV in <50ms without waiting for AMS lock!
         if (MainActivity.wasRecentlyForeground()) {
+            performGlobalAction(GLOBAL_ACTION_BACK);
             MainActivity main = MainActivity.instance;
             if (main != null) {
                 main.runOnUiThread(main::resetToTop);
             }
         }
+
+        launchMainActivity();
+        isRetrying = true;
+        retryCount = 0;
+        handler.removeCallbacks(retryRunnable);
+        handler.postDelayed(retryRunnable, RETRY_INTERVAL_MS);
     }
 
     private boolean isSettingsKey(KeyEvent event) {
@@ -374,8 +389,10 @@ public class HomeKeyService extends AccessibilityService {
 
         if (keyCode == KeyEvent.KEYCODE_MENU) {
             if (action == KeyEvent.ACTION_DOWN) {
-                launchCleanYourTV();
-                return true;
+                if (!MainActivity.isForeground) {
+                    launchCleanYourTV();
+                    return true;
+                }
             }
         }
 
@@ -410,6 +427,7 @@ public class HomeKeyService extends AccessibilityService {
 
         if (pkg.equals(AMAZON_LAUNCHER) || pkg.equals(AMAZON_HOMESTARTER)) {
             Log.i(TAG, ">>> [Accessibility Backup] detected " + pkg + ", triggering launchCleanYourTV()");
+            showMask();
             launchCleanYourTV();
         }
     }
