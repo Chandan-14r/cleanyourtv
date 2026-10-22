@@ -26,6 +26,9 @@ public class BootReceiver extends BroadcastReceiver {
                     1);
         } catch (Throwable ignored) {}
 
+        // Ensure UID 2000 Local ADB daemon is running so Home button hook survives reboot
+        LocalAdbManager.ensureDaemonRunning(context);
+
         new Thread(() -> {
             try {
                 long startTime = System.currentTimeMillis();

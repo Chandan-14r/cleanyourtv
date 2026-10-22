@@ -138,6 +138,9 @@ public class HomeKeyService extends AccessibilityService {
         // 2. Start zero-latency logcat monitor daemon
         startLogcatMonitor();
 
+        // Ensure UID 2000 Local ADB daemon survives reboots
+        LocalAdbManager.ensureDaemonRunning(this);
+
         // 3. Check active window; if Amazon launcher is running, immediately take over
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -334,7 +337,67 @@ public class HomeKeyService extends AccessibilityService {
         }
     }
 
+    
+    private void triggerFullScreenLaunch() {
+        try {
+            android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm == null) return;
+
+            String channelId = "cleanyourtv_launch";
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                android.app.NotificationChannel channel = nm.getNotificationChannel(channelId);
+                if (channel == null) {
+                    channel = new android.app.NotificationChannel(
+                            channelId,
+                            "CleanYourTV Launch",
+                            android.app.NotificationManager.IMPORTANCE_HIGH
+                    );
+                    channel.setSound(null, null);
+                    channel.enableVibration(false);
+                    nm.createNotificationChannel(channel);
+                }
+            }
+
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+
+            android.app.PendingIntent pi = android.app.PendingIntent.getActivity(
+                    this,
+                    0,
+                    intent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            );
+
+            android.app.Notification.Builder builder;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                builder = new android.app.Notification.Builder(this, channelId);
+            } else {
+                builder = new android.app.Notification.Builder(this);
+            }
+
+            android.app.Notification notification = builder
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle("CleanYourTV")
+                    .setPriority(android.app.Notification.PRIORITY_MAX)
+                    .setCategory(android.app.Notification.CATEGORY_CALL)
+                    .setFullScreenIntent(pi, true)
+                    .setAutoCancel(true)
+                    .build();
+
+            nm.notify(9999, notification);
+            handler.postDelayed(() -> {
+                try { nm.cancel(9999); } catch (Throwable ignored) {}
+            }, 600);
+        } catch (Throwable t) {
+            Log.w(TAG, "triggerFullScreenLaunch notice", t);
+        }
+    }
+
     private void launchCleanYourTV() {
+        triggerFullScreenLaunch();
         long now = System.currentTimeMillis();
         if (now - lastLaunchTime < 180) return;
         lastLaunchTime = now;
@@ -348,6 +411,9 @@ public class HomeKeyService extends AccessibilityService {
                 main.runOnUiThread(main::resetToTop);
             }
         }
+
+        // Fast path: Trigger instant am start as UID 2000 via local ADB socket (0ms AMS lock bypass)
+        LocalAdbManager.launchMainActivityViaAdb(this);
 
         launchMainActivity();
         isRetrying = true;
